@@ -45,5 +45,4 @@
         android:paddingTop="6dp"
         android:text="@string/post_delete_button"
         android:textColor="@color/primary_text" />
-
 </LinearLayout>

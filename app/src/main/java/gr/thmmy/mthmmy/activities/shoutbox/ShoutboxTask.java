@@ -7,7 +7,7 @@ import java.util.ArrayList;
 
 import gr.thmmy.mthmmy.model.Shout;
 import gr.thmmy.mthmmy.model.Shoutbox;
-import gr.thmmy.mthmmy.utils.NetworkResultCodes;
+import gr.thmmy.mthmmy.utils.networking.NetworkResultCodes;
 import gr.thmmy.mthmmy.utils.parsing.NewParseTask;
 import gr.thmmy.mthmmy.utils.parsing.ParseException;
 import gr.thmmy.mthmmy.utils.parsing.ParseHelpers;
@@ -45,7 +45,7 @@ public class ShoutboxTask extends NewParseTask<Shoutbox> {
         String formUrl = shoutboxForm.attr("action");
         String sc = shoutboxForm.select("input[name=sc]").first().attr("value");
         String shoutName = shoutboxForm.select("input[name=tp-shout-name]").first().attr("value");
-        // TODO: make shout send nullable and disable shouting
+
         Element shoutSendInput = shoutboxForm.select("input[name=shout_send]").first();
         String shoutSend = null;
         if (shoutSendInput != null)

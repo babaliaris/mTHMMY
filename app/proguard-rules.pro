@@ -29,17 +29,19 @@
 # Animal Sniffer compileOnly dependency to ensure APIs are compatible with older versions of Java.
 -dontwarn org.codehaus.mojo.animal_sniffer.*
 
-# Picasso
--dontwarn com.squareup.okhttp.**
+#Glide
+-keep public class * implements com.bumptech.glide.module.GlideModule
+-keep public class * extends com.bumptech.glide.module.AppGlideModule
+-keep public enum com.bumptech.glide.load.ImageHeaderParser$** {
+  **[] $VALUES;
+  public *;
+}
 
 # Android-Iconics (fontawesome-typeface)
 -keep class .R
 -keep class **.R$* {
     <fields>;
 }
-
-# android-gif-drawable
--keep public class pl.droidsonroids.gif.GifIOException{<init>(int, java.lang.String);}
 
 # JSoup
 -keep class org.jsoup.**

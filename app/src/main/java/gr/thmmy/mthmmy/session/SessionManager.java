@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 import com.franmontiel.persistentcookiejar.PersistentCookieJar;
 import com.franmontiel.persistentcookiejar.persistence.SharedPrefsCookiePersistor;
 
+import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 
@@ -18,7 +19,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import gr.thmmy.mthmmy.utils.parsing.ParseException;
-import gr.thmmy.mthmmy.utils.parsing.ParseHelpers;
 import okhttp3.Cookie;
 import okhttp3.FormBody;
 import okhttp3.HttpUrl;
@@ -39,17 +39,20 @@ public class SessionManager {
     private static final HttpUrl loginUrl = HttpUrl.parse("https://www.thmmy.gr/smf/index.php?action=login2");
     public static final HttpUrl unreadUrl = HttpUrl.parse("https://www.thmmy.gr/smf/index.php?action=unread;all;start=0;theme=4");
     public static final HttpUrl shoutboxUrl = HttpUrl.parse("https://www.thmmy.gr/smf/index.php?action=tpmod;sa=shoutbox;theme=4");
+    static final String baseLogoutLink = "https://www.thmmy.gr/smf/index.php?action=logout;sesc=";
+    static final String baseMarkAllAsReadLink = "https://www.thmmy.gr/smf/index.php?action=markasread;sa=all;sesc=";
     private static final String guestName = "Guest";
 
-    //Response Codes
-    public static final int SUCCESS = 0;
-    public static final int FAILURE = 1;    //Generic Error
-    public static final int WRONG_USER = 2;
-    public static final int WRONG_PASSWORD = 3;
-    public static final int CANCELLED = 4;
-    public static final int CONNECTION_ERROR = 5;
-    public static final int EXCEPTION = 6;
-    public static final int BANNED_USER = 7;
+    //Response Codes - make sure they do not overlap with NetworkResultCodes, just in case
+    public static final int SUCCESS = 20;
+    public static final int FAILURE = 21;    //Generic Error
+    public static final int WRONG_USER = 22;
+    public static final int WRONG_PASSWORD = 23;
+    public static final int CANCELLED = 24;
+    public static final int CONNECTION_ERROR = 25;
+    public static final int EXCEPTION = 26;
+    public static final int BANNED_USER = 27;
+    public static final int INVALID_SESSION = 28;
 
     // Client & Cookies
     private final OkHttpClient client;
@@ -57,70 +60,60 @@ public class SessionManager {
     private final SharedPrefsCookiePersistor cookiePersistor; //Used to explicitly edit cookies in cookieJar
 
     //Shared Preferences & its keys
-    private final SharedPreferences sharedPrefs;
+    private final SharedPreferences sessionSharedPrefs;
     private final SharedPreferences draftsPrefs;
     private static final String USERNAME = "Username";
     private static final String USER_ID = "UserID";
     private static final String AVATAR_LINK = "AvatarLink";
     private static final String HAS_AVATAR = "HasAvatar";
-    private static final String LOGOUT_LINK = "LogoutLink";
     private static final String LOGGED_IN = "LoggedIn";
     private static final String LOGIN_SCREEN_AS_DEFAULT = "LoginScreenAsDefault";
 
     //Constructor
     public SessionManager(OkHttpClient client, PersistentCookieJar cookieJar,
-                          SharedPrefsCookiePersistor cookiePersistor, SharedPreferences sharedPrefs, SharedPreferences draftsPrefs) {
+                          SharedPrefsCookiePersistor cookiePersistor, SharedPreferences sessionSharedPrefs, SharedPreferences draftsPrefs) {
         this.client = client;
         this.cookiePersistor = cookiePersistor;
         this.cookieJar = cookieJar;
-        this.sharedPrefs = sharedPrefs;
+        this.sessionSharedPrefs = sessionSharedPrefs;
         this.draftsPrefs = draftsPrefs;
     }
 
-    //------------------------------------AUTH BEGINS----------------------------------------------
+    //------------------------------------ AUTH ----------------------------------------------
 
     /**
      * Login function with two options: (username, password) or nothing (using saved cookies).
      * Always call it in a separate thread.
      */
-    public int login(String... strings) {
-        Timber.i("Logging in...");
+    public int login(String username, String password) {
+        Timber.d("Logging in...");
 
         //Build the login request for each case
         Request request;
-        if (strings.length == 2) {
-            clearSessionData();
+        clearSessionData();
 
-            String loginName = strings[0];
-            String password = strings[1];
+        RequestBody formBody = new FormBody.Builder()
+                .add("user", username)
+                .add("passwrd", password)
+                .add("cookielength", "-1") //-1 is forever
+                .build();
+        request = new Request.Builder()
+                .url(loginUrl)
+                .post(formBody)
+                .build();
 
-            RequestBody formBody = new FormBody.Builder()
-                    .add("user", loginName)
-                    .add("passwrd", password)
-                    .add("cookielength", "-1") //-1 is forever
-                    .build();
-            request = new Request.Builder()
-                    .url(loginUrl)
-                    .post(formBody)
-                    .build();
-        } else {
-            request = new Request.Builder()
-                    .url(loginUrl)
-                    .build();
-        }
 
         try {
             //Make request & handle response
             Response response = client.newCall(request).execute();
-            Document document = ParseHelpers.parse(response.body().string());
+            Document document = Jsoup.parse(response.body().string());
 
-            if (validateRetrievedCookies())
-            {
+            if (validateRetrievedCookies()) {
                 Timber.i("Login successful!");
                 setPersistentCookieSession();   //Store cookies
 
                 //Edit SharedPreferences, save session's data
-                SharedPreferences.Editor editor = sharedPrefs.edit();
+                SharedPreferences.Editor editor = sessionSharedPrefs.edit();
                 setLoginScreenAsDefault(false);
                 editor.putBoolean(LOGGED_IN, true);
                 editor.putString(USERNAME, extractUserName(document));
@@ -129,7 +122,6 @@ public class SessionManager {
                 if (avatar != null)
                     editor.putString(AVATAR_LINK, avatar);
                 editor.putBoolean(HAS_AVATAR, avatar != null);
-                editor.putString(LOGOUT_LINK, extractLogoutLink(document));
                 editor.apply();
 
                 return SUCCESS;
@@ -173,29 +165,6 @@ public class SessionManager {
     }
 
     /**
-     * A function that checks the validity of the current saved session (if it exists).
-     * If isLoggedIn() is true, it will call login() with cookies. On failure, this can only return
-     * the code FAILURE. CANCELLED, CONNECTION_ERROR and EXCEPTION are simply considered a SUCCESS
-     * (e.g. no internet connection), at least until a more thorough handling of different
-     * exceptions is implemented (if considered mandatory).
-     * Always call it in a separate thread in a way that won't hinder performance (e.g. after
-     * fragments' data are retrieved).
-     */
-    public void validateSession() {
-        Timber.i("Validating session...");
-
-        if (isLoggedIn()) {
-            int loginResult = login();
-            if (loginResult != FAILURE)
-                return;
-        } else if (isLoginScreenDefault())
-            return;
-
-        setLoginScreenAsDefault(true);
-        clearSessionData();
-    }
-
-    /**
      * Call this function when user explicitly chooses to continue as a guest (UI thread).
      */
     public void guestLogin() {
@@ -204,62 +173,37 @@ public class SessionManager {
         setLoginScreenAsDefault(false);
     }
 
-
-    /**
-     * Logout function. Always call it in a separate thread.
-     */
-    public int logout() {
-        Timber.i("Logging out...");
-
-        Request request = new Request.Builder()
-                .url(sharedPrefs.getString(LOGOUT_LINK, "LogoutLink"))
-                .build();
-
-        try {
-            //Make request & handle response
-            Response response = client.newCall(request).execute();
-            Document document = ParseHelpers.parse(response.body().string());
-
-            Elements loginButton = document.select("[value=Login]");  //Attempt to find login button
-            if (!loginButton.isEmpty()) //If login button exists, logout was successful
-            {
-                Timber.i("Logout successful!");
-                return SUCCESS;
-            } else {
-                Timber.i("Logout failed.");
-                return FAILURE;
-            }
-        } catch (IOException e) {
-            Timber.w(e, "Logout IOException");
-            return CONNECTION_ERROR;
-        } catch (Exception e) {
-            Timber.e(e, "Logout Exception");
-            return EXCEPTION;
-        } finally {
-            //All data should always be cleared from device regardless the result of logout
-            clearSessionData();
-            guestLogin();
-        }
+    void logoutCleanup() {
+        clearSessionData();
+        guestLogin();
     }
-    //--------------------------------------AUTH ENDS-----------------------------------------------
 
-    //---------------------------------------GETTERS------------------------------------------------
+    private void clearSessionData() {
+        cookieJar.clear();
+        sessionSharedPrefs.edit().clear().apply(); //Clear session data
+        sessionSharedPrefs.edit().putString(USERNAME, guestName).apply();
+        sessionSharedPrefs.edit().putInt(USER_ID, -1).apply();
+        sessionSharedPrefs.edit().putBoolean(LOGGED_IN, false).apply(); //User logs out
+        draftsPrefs.edit().clear().apply(); //Clear saved drafts
+        Timber.i("Session data cleared.");
+    }
+
+    //--------------------------------------- GETTERS ------------------------------------------------
     public String getUsername() {
-        return sharedPrefs.getString(USERNAME, USERNAME);
+        return sessionSharedPrefs.getString(USERNAME, USERNAME);
     }
 
     public int getUserId() {
-        return sharedPrefs.getInt(USER_ID, -1);
+        return sessionSharedPrefs.getInt(USER_ID, -1);
     }
 
     public String getAvatarLink() {
-        return sharedPrefs.getString(AVATAR_LINK, AVATAR_LINK);
+        return sessionSharedPrefs.getString(AVATAR_LINK, AVATAR_LINK);
     }
 
     public Cookie getThmmyCookie() {
         List<Cookie> cookieList = cookieJar.loadForRequest(indexUrl);
-        for(Cookie cookie: cookieList)
-        {
+        for(Cookie cookie: cookieList) {
             if(cookie.name().equals("THMMYgrC00ki3"))
                 return cookie;
         }
@@ -267,24 +211,21 @@ public class SessionManager {
     }
 
     public boolean hasAvatar() {
-        return sharedPrefs.getBoolean(HAS_AVATAR, false);
+        return sessionSharedPrefs.getBoolean(HAS_AVATAR, false);
     }
 
     public boolean isLoggedIn() {
-        return sharedPrefs.getBoolean(LOGGED_IN, false);
+        return sessionSharedPrefs.getBoolean(LOGGED_IN, false);
     }
 
     public boolean isLoginScreenDefault() {
-        return sharedPrefs.getBoolean(LOGIN_SCREEN_AS_DEFAULT, true);
+        return sessionSharedPrefs.getBoolean(LOGIN_SCREEN_AS_DEFAULT, true);
     }
 
-    //--------------------------------------GETTERS END---------------------------------------------
-
-    //------------------------------------OTHER FUNCTIONS-------------------------------------------
+    //------------------------------------ OTHER -------------------------------------------
     private boolean validateRetrievedCookies() {
         List<Cookie> cookieList = cookieJar.loadForRequest(indexUrl);
-        for(Cookie cookie: cookieList)
-        {
+        for(Cookie cookie: cookieList) {
             if(cookie.name().equals("THMMYgrC00ki3"))
                 return true;
         }
@@ -303,21 +244,10 @@ public class SessionManager {
         cookieList.add(builder.build());
         cookiePersistor.clear();
         cookiePersistor.saveAll(cookieList);
-
-    }
-
-    private void clearSessionData() {
-        cookieJar.clear();
-        sharedPrefs.edit().clear().apply(); //Clear session data
-        sharedPrefs.edit().putString(USERNAME, guestName).apply();
-        sharedPrefs.edit().putInt(USER_ID, -1).apply();
-        sharedPrefs.edit().putBoolean(LOGGED_IN, false).apply(); //User logs out
-        draftsPrefs.edit().clear().apply(); //Clear saved drafts
-        Timber.i("Session data cleared.");
     }
 
     private void setLoginScreenAsDefault(boolean b){
-        sharedPrefs.edit().putBoolean(LOGIN_SCREEN_AS_DEFAULT, b).apply();
+        sessionSharedPrefs.edit().putBoolean(LOGIN_SCREEN_AS_DEFAULT, b).apply();
     }
 
     @NonNull
@@ -353,7 +283,6 @@ public class SessionManager {
         return "User"; //return a default username
     }
 
-    @NonNull
     private int extractUserId(@NonNull Document doc) {
         try{
             Elements elements = doc.select("a:containsOwn(Εμφάνιση των μηνυμάτων σας), a:containsOwn(Show own posts)");
@@ -372,7 +301,6 @@ public class SessionManager {
         return -1;
     }
 
-
     @Nullable
     private String extractAvatarLink(@NonNull Document doc) {
         Elements avatar = doc.getElementsByClass("avatar");
@@ -382,19 +310,4 @@ public class SessionManager {
         Timber.i("Extracting avatar's link failed!");
         return null;
     }
-
-    @NonNull
-    private String extractLogoutLink(@NonNull Document doc) {
-        Elements logoutLink = doc.select("a[href^=https://www.thmmy.gr/smf/index.php?action=logout;sesc=]");
-
-        if (!logoutLink.isEmpty()) {
-            String link = logoutLink.first().attr("href");
-            if (link != null && !link.isEmpty())
-                return link;
-        }
-        Timber.e(new ParseException("Parsing failed(logoutLink extraction)"),"ParseException");
-        return "https://www.thmmy.gr/smf/index.php?action=logout"; //return a default link
-    }
-    //----------------------------------OTHER FUNCTIONS END-----------------------------------------
-
 }

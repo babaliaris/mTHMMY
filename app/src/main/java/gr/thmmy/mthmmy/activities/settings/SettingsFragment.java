@@ -42,6 +42,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     public static final String SELECTED_RINGTONE = "selectedRingtoneKey";
     private static final String SILENT_SELECTED = "STFU";
 
+    private static final String UNREAD = "Unread";
+
     private SharedPreferences settingsFile;
 
     private PREFS_TYPE prefs_type = PREFS_TYPE.NOT_SET;
@@ -65,7 +67,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         defaultHomeTabValues.add("1");
 
         if(isLoggedIn = BaseApplication.getInstance().getSessionManager().isLoggedIn()){
-            defaultHomeTabEntries.add("Unread");
+            defaultHomeTabEntries.add(UNREAD);
             defaultHomeTabValues.add("2");
         }
     }
@@ -171,16 +173,16 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         if(isLoggedIn&& prefs_type==PREFS_TYPE.GUEST) {
             prefs_type = PREFS_TYPE.USER;
             setPreferencesFromResource(R.xml.app_preferences_user, getPreferenceScreen().getKey());
-            if(!defaultHomeTabEntries.contains("Unread")){
-                defaultHomeTabEntries.add("Unread");
+            if(!defaultHomeTabEntries.contains(UNREAD)){
+                defaultHomeTabEntries.add(UNREAD);
                 defaultHomeTabValues.add("2");
             }
         }
         else if(!isLoggedIn&&prefs_type==PREFS_TYPE.USER){
             prefs_type = PREFS_TYPE.GUEST;
             setPreferencesFromResource(R.xml.app_preferences_guest,getPreferenceScreen().getKey());
-            if(defaultHomeTabEntries.contains("Unread")){
-                defaultHomeTabEntries.remove("Unread");
+            if(defaultHomeTabEntries.contains(UNREAD)){
+                defaultHomeTabEntries.remove(UNREAD);
                 defaultHomeTabValues.remove("2");
             }
         }
@@ -198,18 +200,26 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         if (key.equals(getString(R.string.pref_privacy_crashlytics_enable_key))) {
             enabled = sharedPreferences.getBoolean(key, false);
             if(enabled)
-                BaseApplication.getInstance().startFirebaseCrashlyticsCollection();
+                BaseApplication.getInstance().setFirebaseCrashlyticsEnabled(true);
             else {
                 Timber.i("Crashlytics collection will be disabled after restarting.");
-                Toast.makeText(BaseApplication.getInstance().getApplicationContext(), "This change will take effect once you restart the app.", Toast.LENGTH_SHORT).show();
+                BaseApplication.getInstance().setFirebaseCrashlyticsEnabled(false);
+                displayRestartAppToTakeEffectToast();
             }
         } else if (key.equals(getString(R.string.pref_privacy_analytics_enable_key))) {
             enabled = sharedPreferences.getBoolean(key, false);
-            BaseApplication.getInstance().setFirebaseAnalyticsCollection(enabled);
+            BaseApplication.getInstance().setFirebaseAnalyticsEnabled(enabled);
             if(enabled)
                 Timber.i("Analytics collection enabled.");
             else
                 Timber.i("Analytics collection disabled.");
+        } else if (key.equals(getString(R.string.pref_app_display_relative_time_key))
+                && BaseApplication.getInstance().isDisplayRelativeTimeEnabled()!=sharedPreferences.getBoolean(key, false)){
+                displayRestartAppToTakeEffectToast();
         }
+    }
+
+    private void displayRestartAppToTakeEffectToast(){
+        Toast.makeText(BaseApplication.getInstance().getApplicationContext(), "This change will take effect once you restart the app.", Toast.LENGTH_SHORT).show();
     }
 }

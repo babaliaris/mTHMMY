@@ -7,14 +7,15 @@
 
     <!--Dark-->
     <color name="primary">#2B2B2B</color>
-    <color name="primary_dark">#333333</color>
-    <color name="primary_light">#3C3C3C</color>
-    <color name="primary_lighter">#494949</color>
+    <color name="primary_light">#333333</color>
+    <color name="primary_lighter">#3C3C3C</color>
+    <color name="primary_lighter_2">#494949</color>
+    <color name="primary_dark">#222222</color>
     <color name="accent">#26A69A</color>
     <color name="primary_text">#E7E7E7</color>
     <color name="secondary_text">#757575</color>
     <color name="background">#323232</color>
-    <color name="card_background">#3C3F41</color>
+    <color name="background_light">#3C3F41</color>
     <color name="divider">#8B8B8B</color>
     <color name="link_color">#FF9800</color>
     <color name="mention_color">#FAA61A</color>

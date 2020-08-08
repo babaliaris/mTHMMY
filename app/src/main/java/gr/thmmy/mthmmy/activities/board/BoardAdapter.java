@@ -39,8 +39,8 @@ class BoardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final int VIEW_TYPE_LOADING = 4;
 
     private final Context context;
-    private ArrayList<Board> parsedSubBoards = new ArrayList<>();
-    private ArrayList<Topic> parsedTopics = new ArrayList<>();
+    private ArrayList<Board> parsedSubBoards;
+    private ArrayList<Topic> parsedTopics;
     private final ArrayList<Boolean> boardExpandableVisibility = new ArrayList<>();
     private final ArrayList<Boolean> topicExpandableVisibility = new ArrayList<>();
 
@@ -77,11 +77,11 @@ class BoardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             subBoardTitle.setText(context.getString(R.string.child_board_title));
             subBoardTitle.setTypeface(subBoardTitle.getTypeface(), Typeface.BOLD);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                subBoardTitle.setBackgroundColor(context.getColor(R.color.card_background));
+                subBoardTitle.setBackgroundColor(context.getColor(R.color.background_light));
                 subBoardTitle.setTextColor(context.getColor(R.color.accent));
             } else {
                 //noinspection deprecation
-                subBoardTitle.setBackgroundColor(context.getResources().getColor(R.color.card_background));
+                subBoardTitle.setBackgroundColor(context.getResources().getColor(R.color.background_light));
                 //noinspection deprecation
                 subBoardTitle.setTextColor(context.getResources().getColor(R.color.accent));
             }
@@ -161,9 +161,25 @@ class BoardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 boardExpandableVisibility.set(subBoardViewHolder.getAdapterPosition() - 1, !visible);
             });
             subBoardViewHolder.boardTitle.setText(subBoard.getTitle());
-            subBoardViewHolder.boardMods.setText(subBoard.getMods());
-            subBoardViewHolder.boardStats.setText(subBoard.getStats());
-            subBoardViewHolder.boardLastPost.setText(subBoard.getLastPost());
+            String mods = subBoard.getMods();
+            String stats = subBoard.getStats();
+            String lastPost = subBoard.getLastPost();
+
+            if(!mods.isEmpty()){
+                subBoardViewHolder.boardMods.setText(mods);
+                subBoardViewHolder.boardMods.setVisibility(View.VISIBLE);
+            }
+
+            if(!stats.isEmpty()){
+                subBoardViewHolder.boardStats.setText(stats);
+                subBoardViewHolder.boardStats.setVisibility(View.VISIBLE);
+            }
+
+            if(!lastPost.isEmpty()){
+                subBoardViewHolder.boardLastPost.setText(lastPost);
+                subBoardViewHolder.boardLastPost.setVisibility(View.VISIBLE);
+            }
+
             if (!Objects.equals(subBoard.getLastPostUrl(), "")) {
                 subBoardViewHolder.boardLastPost.setOnClickListener(view -> {
                     Intent intent = new Intent(context, TopicActivity.class);
@@ -187,7 +203,7 @@ class BoardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             topicViewHolder.topicRow.setOnClickListener(view -> {
                 Intent intent = new Intent(context, TopicActivity.class);
                 Bundle extras = new Bundle();
-                extras.putString(BUNDLE_TOPIC_URL, topic.getUrl());
+                extras.putString(BUNDLE_TOPIC_URL, topic.getTopicUrl());
                 extras.putString(BUNDLE_TOPIC_TITLE, topic.getSubject());
                 intent.putExtras(extras);
                 intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -232,7 +248,7 @@ class BoardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             topicViewHolder.topicSubject.setText(lockedSticky);
             topicViewHolder.topicStartedBy.setText(context.getString(R.string.topic_started_by, topic.getStarter()));
             topicViewHolder.topicStats.setText(topic.getStats());
-            topicViewHolder.topicLastPost.setText(context.getString(R.string.topic_last_post, topic.getLastPostDateAndTime()));
+            topicViewHolder.topicLastPost.setText(context.getString(R.string.topic_last_post, topic.getLastPostDateTime(), topic.getLastUser()));
             topicViewHolder.topicLastPost.setOnClickListener(view -> {
                 Intent intent = new Intent(context, TopicActivity.class);
                 Bundle extras = new Bundle();

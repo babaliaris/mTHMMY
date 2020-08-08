@@ -2,11 +2,18 @@ package gr.thmmy.mthmmy.activities.topic.tasks;
 
 import android.os.AsyncTask;
 
+import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import gr.thmmy.mthmmy.activities.topic.TopicParser;
 import gr.thmmy.mthmmy.base.BaseApplication;
@@ -25,6 +32,8 @@ import timber.log.Timber;
  * parameter.</p>
  */
 public class TopicTask extends AsyncTask<String, Void, TopicTaskResult> {
+    private static final Pattern msgPattern = Pattern.compile("msg(\\d+)");
+
     private TopicTaskObserver topicTaskObserver;
     private OnTopicTaskCompleted finishListener;
 
@@ -41,26 +50,29 @@ public class TopicTask extends AsyncTask<String, Void, TopicTaskResult> {
     @Override
     protected TopicTaskResult doInBackground(String... strings) {
         Document topic = null;
+
         String newPageUrl = strings[0];
+
+        //TODO: Perhaps decode all URLs app-wide (i.e. in BaseApplication)?
+        try {
+            //Decodes e.g. any %3B to ;
+            newPageUrl = URLDecoder.decode(newPageUrl, StandardCharsets.UTF_8.displayName());
+        } catch (UnsupportedEncodingException e) {
+            Timber.e(e, "Unsupported Encoding");
+        }
 
         //Finds the index of message focus if present
         int postFocus = 0;
-        {
-            if (newPageUrl.contains("msg")) {
-                String tmp = newPageUrl.substring(newPageUrl.indexOf("msg") + 3);
-                if (tmp.contains(";"))
-                    postFocus = Integer.parseInt(tmp.substring(0, tmp.indexOf(";")));
-                else if (tmp.contains("#"))
-                    postFocus = Integer.parseInt(tmp.substring(0, tmp.indexOf("#")));
-            }
-        }
+        Matcher matcher = msgPattern.matcher(newPageUrl);
+        if (matcher.find())
+            postFocus = Integer.parseInt(Objects.requireNonNull(matcher.group(1)));
 
         Request request = new Request.Builder()
                 .url(newPageUrl)
                 .build();
         try {
             Response response = BaseApplication.getInstance().getClient().newCall(request).execute();
-            topic = ParseHelpers.parse(response.body().string());
+            topic = Jsoup.parse(response.body().string());
 
             ParseHelpers.Language language = ParseHelpers.Language.getLanguage(topic);
 
@@ -79,10 +91,10 @@ public class TopicTask extends AsyncTask<String, Void, TopicTaskResult> {
             String topicTitle = topic.select("td[id=top_subject]").first().text();
             if (topicTitle.contains("Topic:"))
                 topicTitle = topicTitle.substring(topicTitle.indexOf("Topic:") + 7
-                        , topicTitle.indexOf("(Read") - 2);
+                        , topicTitle.indexOf("(Read") - 1);
             else
                 topicTitle = topicTitle.substring(topicTitle.indexOf("Θέμα:") + 6
-                        , topicTitle.indexOf("(Αναγνώστηκε") - 2);
+                        , topicTitle.indexOf("(Αναγνώστηκε") - 1);
 
             //Finds current page's index
             int currentPageIndex = TopicParser.parseCurrentPageIndex(topic, language);
@@ -120,10 +132,10 @@ public class TopicTask extends AsyncTask<String, Void, TopicTaskResult> {
     }
 
     private boolean isUnauthorized(Document document) {
-        return document != null && document.select("body:contains(The topic or board you" +
+        return document != null && !document.select("body:contains(The topic or board you" +
                 " are looking for appears to be either missing or off limits to you.)," +
                 "body:contains(Το θέμα ή πίνακας που ψάχνετε ή δεν υπάρχει ή δεν " +
-                "είναι προσβάσιμο από εσάς.)").size() > 0;
+                "είναι προσβάσιμο από εσάς.)").isEmpty();
     }
 
     @Override
